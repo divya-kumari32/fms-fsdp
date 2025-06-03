@@ -1000,6 +1000,7 @@ class StreamingDocDataset(_StatefulDataset):
                         min(max((end - tally) / shard_sizes[i], 0), 1),
                     ]
                 tally += shard_sizes[i]
+            print(self.rank, shardset)
 
             # Assemble length of each owned shard file
             doc_counts = {}
