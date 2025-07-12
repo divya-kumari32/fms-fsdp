@@ -662,13 +662,19 @@ class PreloadBufferDataset(_WrapperDataset):
 
     def __iter__(self):
         dataset = iter(self.dataset)
+        # Pad out buffer if needed
+        self._pad_buffer()
+        first_draw = next(dataset)
         while True:
-            # Pad out buffer if needed
-            self._pad_buffer()
+            # If buffer entries have wrong length, reset buffer
+            if len(first_draw) != len(self.buffer[0]):
+                self.buffer = []
+                self.buffer_size = 0
+                self._pad_buffer()
 
             # If buffer is undersized, add a datapoint
             if self.buffer_size < self.window_size:
-                self.buffer[self.buffer_size] = next(dataset)
+                self.buffer[self.buffer_size] = next(dataset) if self.buffer_size > 0 else first_draw
                 self.buffer_size += 1
 
             # Swap out randomly sampled value from buffer.
@@ -684,10 +690,10 @@ class PreloadBufferDataset(_WrapperDataset):
             yield out
 
     def _pad_buffer(self):
-        if self.buffer_size < self.window_size:
+        if len(self.buffer) < self.window_size:
             self.buffer += [
                 [],
-            ] * (self.window_size - self.buffer_size)
+            ] * (self.window_size - len(self.buffer))
 
     def state_dict(self):
         # Write generator state manually
@@ -695,6 +701,8 @@ class PreloadBufferDataset(_WrapperDataset):
         # Prune buffer so it can be resharded in future
         self.buffer = self.buffer[: self.buffer_size]
         out = super().state_dict()
+        # Pad buffer back out again
+        self._pad_buffer()
         return out
 
     def load_state_dict(self, state_dicts, sharded_input=False):
