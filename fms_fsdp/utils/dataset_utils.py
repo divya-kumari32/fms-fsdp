@@ -1192,8 +1192,15 @@ class StreamingDocDataset(_StatefulDataset):
             # Assemble document set owned by this worker:
             # listdir, assemble shardfraglist (ind -> shard, frag)
             start_ = time.time()
-            mp = os.path.join(self.metapath, datapath, "shardlist.pth")
-            print("METAPATH:", self.metapath)
+            pref = os.path.commonpath([self.metapath, datapath])
+            mp = os.path.join(
+                pref,
+                os.path.relpath(pref, self.metapath),
+                os.path.relpath(pref, datapath),
+                "shardlist.pth",
+            )
+            if self.rank == 0:
+                print("METAPATH:", mp)
             if len(self.metapath)>0 and os.path.exists(mp):
                 shards = torch.load(mp)
             else:
@@ -1207,10 +1214,9 @@ class StreamingDocDataset(_StatefulDataset):
                 ]
                 shards.sort()  # Ensure consistent sharding across machines
                 if self.rank == 0 and len(self.metapath) > 0:
-                    print("SAVEPATH:", mp)
                     torch.save(shards, mp)
-            if self.rank == 0:
-                print(f"    Crawl time: {time.time()-start_}")
+                if self.rank == 0:
+                    print(f"    Crawl time: {time.time()-start_}")
 
             # Use shard file sizes to perform partitioning
             # Create shardlist of form shardid -> [start%, end%]
