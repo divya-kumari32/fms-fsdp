@@ -32,6 +32,7 @@ class train_config:
     doc_breakpoint: int = 65_536
     filter_exp: int = 2
     target_doclen: int = 8192
+    slice_rate: float = 0.0
 
     # fsdp policies
     sharding_strategy: str = "hsdp"
