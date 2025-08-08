@@ -1189,7 +1189,7 @@ class StreamingDocDataset(_StatefulDataset):
 
             # Assemble document set owned by this worker:
             # listdir, assemble shardfraglist (ind -> shard, frag)
-            start = time.time()
+            start_ = time.time()
             shards = [
                 os.path.join(root, name)[len(datapath) + 1 :]
                 for root, dirs, files in os.walk(datapath, topdown=False, followlinks=True)
@@ -1200,11 +1200,11 @@ class StreamingDocDataset(_StatefulDataset):
             ]
             shards.sort()  # Ensure consistent sharding across machines
             if self.rank == 0:
-                print(f"    Crawl time: {time.time()-start}")
+                print(f"    Crawl time: {time.time()-start_}")
 
             # Use shard file sizes to perform partitioning
             # Create shardlist of form shardid -> [start%, end%]
-            start = time.time()
+            start_ = time.time()
             shard_sizes = [
                 os.path.getsize(os.path.join(datapath, shard)) for shard in shards
             ]
@@ -1221,7 +1221,7 @@ class StreamingDocDataset(_StatefulDataset):
                     ]
                 tally += shard_sizes[i]
             if self.rank == 0:
-                print(f"    Length retrieval time: {time.time()-start}")
+                print(f"    Length retrieval time: {time.time()-start_}")
 
             # Assemble length of each owned shard file
             doc_counts = {
@@ -1510,6 +1510,8 @@ class ScalableShardDataset(_WrapperDataset):
             else:
                 epoch_count = torch.tensor([d.epochs_seen for d in self.data])
                 weight = epoch_count.sub(epoch_count.max()).neg()
+                if sum(weight) == 0:
+                    weight += 1
                 ind = torch.multinomial(
                     weight.float(),
                     1,
