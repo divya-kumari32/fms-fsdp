@@ -1457,7 +1457,6 @@ class ScalableShardDataset(_WrapperDataset):
         self.data: List[StreamingDocDataset] = []
         self.logicals_owned: List[int] = []
         self.n_logicals = 0
-        self.n_docs_remaining: List[int] = []
         self.generator = None
 
         # Position "state", used only for maintaining order when n_workers is unchanged
@@ -1467,7 +1466,7 @@ class ScalableShardDataset(_WrapperDataset):
         self.g_state = None
 
         self.state_params = ["current_reader", "g_state"]
-        self.reshard_params = ["n_docs_remaining", "logical_shard_states"]
+        self.reshard_params = ["logical_shard_states"]
 
     def setup(self):
         if not self.is_setup:
@@ -1494,9 +1493,8 @@ class ScalableShardDataset(_WrapperDataset):
                         f"Worker {self.rank} assembled logical shard {self.logicals_owned[i]}, {i+1} of {self.n_logicals}"
                     )
             [d.setup() for d in self.data]
-            self.n_docs_remaining = [d._len for d in self.data]
             assert (
-                sum(self.n_docs_remaining) > 0
+                sum([d._len for d in self.data]) > 0
             ), f"No documents detected in shard {self.rank} of {self.datapath}"
 
             self.generator = torch.Generator().manual_seed(self.rank)
@@ -1505,18 +1503,15 @@ class ScalableShardDataset(_WrapperDataset):
         self.setup()
         # Grab one doc at a time in random order
         data = [iter(d) for d in self.data]
-        # Reset if we're rescaling into a prematurely finished epoch
-        # (i.e. [1,1,0,0,0,0] into [1,1,0] [0,0,0] )
-        if sum(self.n_docs_remaining) == 0:
-            self.n_docs_remaining = [d._len for d in self.data]
-            self.generator.manual_seed(self.rank)
         while True:
             # Sample logical shard (or load from ckp)
             if self.current_reader is not None:
                 ind = self.current_reader
             else:
+                epoch_count = torch.tensor([d.epochs_seen for d in self.data])
+                weight = epoch_count.sub(epoch_count.max()).neg()
                 ind = torch.multinomial(
-                    torch.tensor(self.n_docs_remaining, dtype=torch.float),
+                    weight.float(),
                     1,
                     generator=self.generator,
                 ).item()
@@ -1528,10 +1523,6 @@ class ScalableShardDataset(_WrapperDataset):
                 out = next(data[ind])
             # Update state to show we've finished the doc
             self.current_reader = None
-            self.n_docs_remaining[ind] -= 1
-            if sum(self.n_docs_remaining) == 0:
-                self.n_docs_remaining = [d._len for d in self.data]
-                self.generator.manual_seed(self.rank)
             # Return final piece of doc
             yield out
 
