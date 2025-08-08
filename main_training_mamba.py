@@ -28,6 +28,9 @@ from fms_fsdp.utils.train_utils import (
     train,
 )
 
+logging.basicConfig()
+logging.getLogger().setLevel(logging.INFO)
+
 
 def main(**kwargs):
     logging.basicConfig()
@@ -156,7 +159,7 @@ def main(**kwargs):
         auto_wrap_policy=wrapping_policy,
         mixed_precision=mixed_precision_policy,
         sharding_strategy=sharding_strategy_policy,
-        use_orig_params=cfg.use_torch_compile,
+        use_orig_params=True,
         device_id=torch.cuda.current_device(),
         limit_all_gathers=True,
         param_init_fn=param_init_fn,
@@ -179,11 +182,36 @@ def main(**kwargs):
         model = torch.compile(model)
 
     # Optimizer
+    # optimizer = optim.AdamW(
+    #     model.parameters(), lr=cfg.learning_rate, betas=(0.9, 0.95), weight_decay=0.1
+    # )
+    params_with_decay = []
+    params_without_decay = []
+    for name, param in model.named_parameters():
+        # print(f'{name=}')
+        if 'A_log' in name or 'D' in name or 'dt_bias' in name:
+            params_without_decay.append(param)
+        else:
+            params_with_decay.append(param)
+
+    assert len(params_with_decay) + len(params_without_decay) == len(list(model.named_parameters()))
+
+    # print(f'{params_with_decay=}')
+    # print(f'{params_without_decay=}')
+
     optimizer = optim.AdamW(
-        model.parameters(),
-        lr=cfg.learning_rate,
-        betas=(0.9, 0.95),
-        weight_decay=0.1,
+        [
+            {
+                "params": params_with_decay,
+                "weight_decay": 0.1,
+            },
+            {
+                "params": params_without_decay,
+                "weight_decay": 0.,
+            },
+        ],
+        betas = (0.9, 0.95),
+        lr = cfg.learning_rate, # cfg.learning_rate,
     )
 
     # optionally load from checkpoint (when continue pretraining)
@@ -194,9 +222,11 @@ def main(**kwargs):
         model,
         optimizer,
         None,
-        path=os.path.join(cfg.ckpt_load_path, "checkpoints/")
-        if not os.path.isfile(cfg.ckpt_load_path)
-        else cfg.ckpt_load_path,
+        path=(
+            os.path.join(cfg.ckpt_load_path, "checkpoints/")
+            if not os.path.isfile(cfg.ckpt_load_path)
+            else cfg.ckpt_load_path
+        ),
         strict=False,
     )
     if not is_resuming:

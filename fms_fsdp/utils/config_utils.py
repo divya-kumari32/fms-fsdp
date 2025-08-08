@@ -174,7 +174,7 @@ def get_model_config(model_variant):
                 "num_heads_kv": 8,
                 "out_proj_bias": False,
                 "qkv_proj_bias": False,
-                "rotary_emb_dim": 64,
+                "rotary_emb_dim": 0,
             },
             "rms_norm": True,
             "residual_in_fp32": True,
@@ -182,7 +182,161 @@ def get_model_config(model_variant):
             "pad_vocab_size_multiple": 16,
             "tie_embeddings": False,
         }
-    elif model_variant == "mamba_9.8b_8x":
+    elif model_variant == "mamba_1b":
+        model_config = {
+            "d_model": 1280,
+            "d_intermediate": 3072,
+            "n_layer": 32,
+            "vocab_size": 128256,
+            "ssm_cfg": {"layer": "Mamba2"},
+            "attn_layer_idx": [9, 18, 27],
+            "attn_cfg": {
+                "causal": True,
+                "d_conv": 0,
+                "head_dim": 128,
+                "num_heads": 10,
+                "num_heads_kv": 5,
+                "out_proj_bias": False,
+                "qkv_proj_bias": False,
+                "rotary_emb_dim": 0,
+                "rotary_emb_base": 10_000,
+            },
+            "rms_norm": True,
+            "residual_in_fp32": True,
+            "fused_add_norm": True,
+            "pad_vocab_size_multiple": 16,
+            "tie_embeddings": False,
+        }
+    elif model_variant == "mamba_1b_rope":
+        model_config = {
+            "d_model": 1280,
+            "d_intermediate": 3072,
+            "n_layer": 32,
+            "vocab_size": 128256,
+            "ssm_cfg": {"layer": "Mamba2"},
+            "attn_layer_idx": [9, 18, 27],
+            "attn_cfg": {
+                "causal": True,
+                "d_conv": 0,
+                "head_dim": 128,
+                "num_heads": 10,
+                "num_heads_kv": 5,
+                "out_proj_bias": False,
+                "qkv_proj_bias": False,
+                "rotary_emb_dim": 64,
+                "rotary_emb_base": 10_000,
+            },
+            "rms_norm": True,
+            "residual_in_fp32": True,
+            "fused_add_norm": True,
+            "pad_vocab_size_multiple": 16,
+            "tie_embeddings": False,
+        }
+    elif model_variant == "mamba_1b_group5":
+        model_config = {
+            "d_model": 1280,
+            "d_intermediate": 3072,
+            "n_layer": 32,
+            "vocab_size": 128256,
+            "ssm_cfg": {
+                "layer": "Mamba2", 
+                "ngroups": 5,
+            },
+            "attn_layer_idx": [9, 18, 27],
+            "attn_cfg": {
+                "causal": True,
+                "d_conv": 0,
+                "head_dim": 128,
+                "num_heads": 10,
+                "num_heads_kv": 5,
+                "out_proj_bias": False,
+                "qkv_proj_bias": False,
+                "rotary_emb_dim": 0,
+                "rotary_emb_base": 10_000,
+            },
+            "rms_norm": True,
+            "residual_in_fp32": True,
+            "fused_add_norm": True,
+            "pad_vocab_size_multiple": 16,
+            "tie_embeddings": False,
+        }
+    elif model_variant == "mamba_1b_group5_rope":
+        model_config = {
+            "d_model": 1280,
+            "d_intermediate": 3072,
+            "n_layer": 32,
+            "vocab_size": 128256,
+            "ssm_cfg": {
+                "layer": "Mamba2", 
+                "ngroups": 5,
+            },
+            "attn_layer_idx": [9, 18, 27],
+            "attn_cfg": {
+                "causal": True,
+                "d_conv": 0,
+                "head_dim": 128,
+                "num_heads": 10,
+                "num_heads_kv": 5,
+                "out_proj_bias": False,
+                "qkv_proj_bias": False,
+                "rotary_emb_dim": 64,
+                "rotary_emb_base": 10_000,
+            },
+            "rms_norm": True,
+            "residual_in_fp32": True,
+            "fused_add_norm": True,
+            "pad_vocab_size_multiple": 16,
+            "tie_embeddings": False,
+        }
+    elif model_variant == "llama_1b":
+        model_config = LLaMAConfig(
+            src_vocab_size=128256,
+            emb_dim=1280,
+            nheads=16,
+            kvheads=4,
+            nlayers=32,
+            hidden_grow_factor=3.2,
+            max_expected_seq_len=4096,
+            rope_theta=500000.0,
+        )
+    elif model_variant == "llama_1b_rope652":
+        model_config = LLaMAConfig(
+            src_vocab_size=128256,
+            emb_dim=1280,
+            nheads=16,
+            kvheads=4,
+            nlayers=32,
+            hidden_grow_factor=3.2,
+            max_expected_seq_len=4096,
+            rope_theta=652.0,
+        )
+    elif model_variant == "llama_1b_unrope6":
+        model_config = LLaMAConfig(
+            src_vocab_size=128256,
+            emb_dim=1280,
+            nheads=16,
+            kvheads=4,
+            nlayers=32,
+            hidden_grow_factor=3.2,
+            max_expected_seq_len=4096,
+            rope_theta=6,
+            rope_scaling={"rope_type":"unrope"},
+            rope_partial=.25,
+        )
+    elif model_variant == "llama_1b_unrope32":
+        model_config = LLaMAConfig(
+            src_vocab_size=128256,
+            emb_dim=1280,
+            nheads=16,
+            kvheads=4,
+            nlayers=32,
+            hidden_grow_factor=3.2,
+            max_expected_seq_len=4096,
+            rope_theta=32,
+            rope_scaling={"rope_type":"unrope"},
+            rope_partial=.25,
+        )
+    elif model_variant == "mamba_9.8b_32k":
         model_config = {
             "d_model": 4096,
             "d_intermediate": 14336,
@@ -207,7 +361,7 @@ def get_model_config(model_variant):
             "pad_vocab_size_multiple": 16,
             "tie_embeddings": False,
         }
-    elif model_variant == "mamba_9.8b_16x":
+    elif model_variant == "mamba_9.8b_64k":
         model_config = {
             "d_model": 4096,
             "d_intermediate": 14336,
@@ -232,7 +386,7 @@ def get_model_config(model_variant):
             "pad_vocab_size_multiple": 16,
             "tie_embeddings": False,
         }
-    elif model_variant == "mamba_9.8b_32x":
+    elif model_variant == "mamba_9.8b_128k":
         model_config = {
             "d_model": 4096,
             "d_intermediate": 14336,
@@ -257,7 +411,7 @@ def get_model_config(model_variant):
             "pad_vocab_size_multiple": 16,
             "tie_embeddings": False,
         }
-    elif model_variant == "mamba_9.8b_500k":
+    elif model_variant == "mamba_9.8b_512k":
         model_config = {
             "d_model": 4096,
             "d_intermediate": 14336,
