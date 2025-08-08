@@ -1136,6 +1136,7 @@ class StreamingDocDataset(_StatefulDataset):
         self.verbose = verbose
         self.filter_exp = filter_exp
         self.metapath = metadata_path
+        print("METAPATH:", metadata_path)
         self.docset: List[
             Any
         ] = []  # map of doc indices to (shardid, min docid, max docid)
@@ -1205,7 +1206,7 @@ class StreamingDocDataset(_StatefulDataset):
                     # 1mb minimum file size to prevent empty files
                 ]
                 shards.sort()  # Ensure consistent sharding across machines
-                if self.rank == 0:
+                if self.rank == 0 and len(self.metapath) > 0:
                     torch.save(shards, mp)
             if self.rank == 0:
                 print(f"    Crawl time: {time.time()-start_}")
