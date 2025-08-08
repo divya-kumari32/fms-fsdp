@@ -161,7 +161,7 @@ def get_data_loader(cfg, rank, world_size, dp_degree, postprocess=[causal_lm]):
     data = DocSliceDataset(
         data,
         cfg.eos_token,
-        slice_rate=.75,
+        slice_rate=cfg.slice_rate,
     )
 
     # Transform to tensors
