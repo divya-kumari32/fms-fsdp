@@ -12,6 +12,7 @@ class train_config:
     # dataset and dataloader
     use_dummy_dataset: bool = False
     data_path: str = "/fsx/data"
+    data_meta_path: str = ""
     file_type: str = "arrow"
     col_name: str = "tokens"
     tokenizer_path: str = "/fsx/tokenizer"
