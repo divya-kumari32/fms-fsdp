@@ -1202,7 +1202,7 @@ class StreamingDocDataset(_StatefulDataset):
             if self.rank == 0:
                 print("METAPATH:", mp)
             if len(self.metapath)>0 and os.path.exists(mp):
-                shards = torch.load(mp)
+                shards,shard_sizes = torch.load(mp)
             else:
                 shards = [
                     os.path.join(root, name)[len(datapath) + 1 :]
@@ -1213,18 +1213,17 @@ class StreamingDocDataset(_StatefulDataset):
                     # 1mb minimum file size to prevent empty files
                 ]
                 shards.sort()  # Ensure consistent sharding across machines
+                shard_sizes = [
+                    os.path.getsize(os.path.join(datapath, shard)) for shard in shards
+                ]
                 if self.rank == 0 and len(self.metapath) > 0:
                     os.makedirs(os.path.split(mp)[0], exist_ok=True)
-                    torch.save(shards, mp)
+                    torch.save((shards, shard_sizes), mp)
                 if self.rank == 0:
                     print(f"    Crawl time: {time.time()-start_}")
 
             # Use shard file sizes to perform partitioning
             # Create shardlist of form shardid -> [start%, end%]
-            start_ = time.time()
-            shard_sizes = [
-                os.path.getsize(os.path.join(datapath, shard)) for shard in shards
-            ]
             shard_sizes = [s / sum(shard_sizes) for s in shard_sizes]
             start = self.rank / self.worldsize
             end = (self.rank + 1) / self.worldsize
@@ -1237,14 +1236,15 @@ class StreamingDocDataset(_StatefulDataset):
                         min(max((end - tally) / shard_sizes[i], 0), 1),
                     ]
                 tally += shard_sizes[i]
-            if self.rank == 0:
-                print(f"    Length retrieval time: {time.time()-start_}")
 
             # Assemble length of each owned shard file
+            start_ = time.time()
             doc_counts = {
                 shard: self.filehandler.length(os.path.join(datapath, shard))
                 for shard in shardset
             }
+            if self.rank == 0:
+                print(f"    Length retrieval time: {time.time()-start_}")
 
             # Assemble doc list for each file shard
             # Create docset of form [shardid, min docid, max docid]
