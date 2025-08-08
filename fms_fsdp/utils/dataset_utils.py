@@ -1191,7 +1191,6 @@ class StreamingDocDataset(_StatefulDataset):
 
             # Assemble document set owned by this worker:
             # listdir, assemble shardfraglist (ind -> shard, frag)
-            start_ = time.time()
             pref = os.path.commonpath([self.metapath, datapath])
             mp = os.path.join(
                 pref,
@@ -1199,8 +1198,6 @@ class StreamingDocDataset(_StatefulDataset):
                 os.path.relpath(datapath, pref),
                 "shardlist.pth",
             )
-            if self.rank == 0:
-                print("METAPATH:", mp)
             if len(self.metapath)>0 and os.path.exists(mp):
                 shards,shard_sizes = torch.load(mp)
             else:
@@ -1219,8 +1216,6 @@ class StreamingDocDataset(_StatefulDataset):
                 if self.rank == 0 and len(self.metapath) > 0:
                     os.makedirs(os.path.split(mp)[0], exist_ok=True)
                     torch.save((shards, shard_sizes), mp)
-                if self.rank == 0:
-                    print(f"    Crawl time: {time.time()-start_}")
 
             # Use shard file sizes to perform partitioning
             # Create shardlist of form shardid -> [start%, end%]
@@ -1238,13 +1233,10 @@ class StreamingDocDataset(_StatefulDataset):
                 tally += shard_sizes[i]
 
             # Assemble length of each owned shard file
-            start_ = time.time()
             doc_counts = {
                 shard: self.filehandler.length(os.path.join(datapath, shard))
                 for shard in shardset
             }
-            if self.rank == 0:
-                print(f"    Length retrieval time: {time.time()-start_}")
 
             # Assemble doc list for each file shard
             # Create docset of form [shardid, min docid, max docid]
