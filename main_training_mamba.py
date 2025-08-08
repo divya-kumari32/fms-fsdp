@@ -116,6 +116,9 @@ def main(**kwargs):
     # get model
     config_data = get_model_config(cfg.model_variant)
     mamba_config = MambaConfig(**config_data)
+    mamba_config.attn_cfg.rotary_emb_base *= cfg.seq_length//4096
+    if rank == 0:
+        print(mamba_config)
 
     if cfg.low_cpu_fsdp:
         with torch.device("meta"):
