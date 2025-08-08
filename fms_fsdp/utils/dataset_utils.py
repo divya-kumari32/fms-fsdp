@@ -1195,8 +1195,8 @@ class StreamingDocDataset(_StatefulDataset):
             pref = os.path.commonpath([self.metapath, datapath])
             mp = os.path.join(
                 pref,
-                os.path.relpath(pref, self.metapath),
-                os.path.relpath(pref, datapath),
+                os.path.relpath(self.metapath, pref),
+                os.path.relpath(datapath, pref),
                 "shardlist.pth",
             )
             if self.rank == 0:
