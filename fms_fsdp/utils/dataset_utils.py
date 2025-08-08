@@ -1189,6 +1189,7 @@ class StreamingDocDataset(_StatefulDataset):
 
             # Assemble document set owned by this worker:
             # listdir, assemble shardfraglist (ind -> shard, frag)
+            start = time.time()
             shards = [
                 os.path.join(root, name)[len(datapath) + 1 :]
                 for root, dirs, files in os.walk(datapath, topdown=False, followlinks=True)
@@ -1198,9 +1199,12 @@ class StreamingDocDataset(_StatefulDataset):
                 # 1mb minimum file size to prevent empty files
             ]
             shards.sort()  # Ensure consistent sharding across machines
+            if self.rank == 0:
+                print(f"    Crawl time: {time.time()-start}")
 
             # Use shard file sizes to perform partitioning
             # Create shardlist of form shardid -> [start%, end%]
+            start = time.time()
             shard_sizes = [
                 os.path.getsize(os.path.join(datapath, shard)) for shard in shards
             ]
@@ -1216,6 +1220,8 @@ class StreamingDocDataset(_StatefulDataset):
                         min(max((end - tally) / shard_sizes[i], 0), 1),
                     ]
                 tally += shard_sizes[i]
+            if self.rank == 0:
+                print(f"    Length retrieval time: {time.time()-start}")
 
             # Assemble length of each owned shard file
             doc_counts = {
