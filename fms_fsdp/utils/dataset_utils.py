@@ -1205,7 +1205,8 @@ class StreamingDocDataset(_StatefulDataset):
                     # 1mb minimum file size to prevent empty files
                 ]
                 shards.sort()  # Ensure consistent sharding across machines
-                torch.save(shards, mp)
+                if self.rank == 0:
+                    torch.save(shards, mp)
             if self.rank == 0:
                 print(f"    Crawl time: {time.time()-start_}")
 
