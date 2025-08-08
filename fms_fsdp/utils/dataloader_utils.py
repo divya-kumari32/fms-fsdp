@@ -117,6 +117,7 @@ def get_data_loader(cfg, rank, world_size, dp_degree, postprocess=[causal_lm]):
         min_length=cfg.target_doclen,
         seed=cfg.seed,
         filter_exp=cfg.filter_exp,
+        metadata_path=cfg.data_meta_path,
     )
     # Add rescaling/resharding
     data = ScalableShardDataset(
