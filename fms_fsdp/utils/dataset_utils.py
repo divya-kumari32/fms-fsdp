@@ -1120,6 +1120,7 @@ class StreamingDocDataset(_StatefulDataset):
         max_consecutive_chunks: int = 64,
         verbose: bool = False,
         filter_exp: int = 2,
+        metadata_path: str = "",
     ):
         super().__init__(datapath, rank, worldsize)
         self.seed = seed
@@ -1134,6 +1135,7 @@ class StreamingDocDataset(_StatefulDataset):
         self.max_consec = max_consecutive_chunks
         self.verbose = verbose
         self.filter_exp = filter_exp
+        self.metapath = metadata_path
         self.docset: List[
             Any
         ] = []  # map of doc indices to (shardid, min docid, max docid)
@@ -1190,15 +1192,20 @@ class StreamingDocDataset(_StatefulDataset):
             # Assemble document set owned by this worker:
             # listdir, assemble shardfraglist (ind -> shard, frag)
             start_ = time.time()
-            shards = [
-                os.path.join(root, name)[len(datapath) + 1 :]
-                for root, dirs, files in os.walk(datapath, topdown=False, followlinks=True)
-                for name in files
-                if self.filehandler.is_legal(os.path.join(root, name))
-                and os.path.getsize(os.path.join(root, name)) > 1_000_000
-                # 1mb minimum file size to prevent empty files
-            ]
-            shards.sort()  # Ensure consistent sharding across machines
+            mp = os.path.join(self.metapath, datapath, "shardlist.pth")
+            if len(self.metapath)>0 and os.path.exists(mp):
+                shards = torch.load(mp)
+            else:
+                shards = [
+                    os.path.join(root, name)[len(datapath) + 1 :]
+                    for root, dirs, files in os.walk(datapath, topdown=False, followlinks=True)
+                    for name in files
+                    if self.filehandler.is_legal(os.path.join(root, name))
+                    and os.path.getsize(os.path.join(root, name)) > 1_000_000
+                    # 1mb minimum file size to prevent empty files
+                ]
+                shards.sort()  # Ensure consistent sharding across machines
+                torch.save(shards, mp)
             if self.rank == 0:
                 print(f"    Crawl time: {time.time()-start_}")
 
