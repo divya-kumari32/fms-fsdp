@@ -1214,6 +1214,7 @@ class StreamingDocDataset(_StatefulDataset):
                 ]
                 shards.sort()  # Ensure consistent sharding across machines
                 if self.rank == 0 and len(self.metapath) > 0:
+                    os.makedirs(os.path.split(mp)[0], exist_ok=True)
                     torch.save(shards, mp)
                 if self.rank == 0:
                     print(f"    Crawl time: {time.time()-start_}")
