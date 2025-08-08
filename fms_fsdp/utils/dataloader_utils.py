@@ -158,11 +158,12 @@ def get_data_loader(cfg, rank, world_size, dp_degree, postprocess=[causal_lm]):
         )
 
     # Slice and rearrange docs to force long-context retrieval
-    data = DocSliceDataset(
-        data,
-        cfg.eos_token,
-        slice_rate=cfg.slice_rate,
-    )
+    if cfg.slice_rate > 0:
+        data = DocSliceDataset(
+            data,
+            cfg.eos_token,
+            slice_rate=cfg.slice_rate,
+        )
 
     # Transform to tensors
     data = PreprocessDataset(data, torch.IntTensor)
