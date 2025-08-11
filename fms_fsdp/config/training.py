@@ -49,6 +49,7 @@ class train_config:
     learning_rate: float = 3e-4
     grad_clip_thresh: float = 1.0
     seed: int = 2023
+    zl_coeff: float = 1e-4
 
     # continued training spec
     resuming_dataset: bool = False
