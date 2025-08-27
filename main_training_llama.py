@@ -75,7 +75,7 @@ def main(**kwargs):
     if rank == 0:
         print("Constructing datasets...")
     if not cfg.use_dummy_dataset:
-        train_loader = get_data_loader(cfg, rank, world_size)
+        train_loader = get_data_loader(cfg, rank, world_size, world_size)
     else:
         train_loader = get_dummy_loader(cfg, rank, world_size)
     if rank == 0:
