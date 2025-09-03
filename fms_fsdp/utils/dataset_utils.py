@@ -401,7 +401,7 @@ class ParquetHandler(_ShardFileHandler):
         return "parquet" in os.path.splitext(filepath)[1]
 
     def open(self, path: str):
-        names = pq.read_metadata(path).schema.names
+        names = pq.read_schema(path).names
         match = None
         for name in self.col_names:
             if name in names:
