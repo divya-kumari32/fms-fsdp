@@ -321,7 +321,7 @@ def get_model_config(model_variant):
             max_expected_seq_len=4096,
             rope_theta=6,
             rope_scaling={"rope_type":"unrope"},
-            rope_partial=.25,
+            rope_partial=.5,
         )
     elif model_variant == "llama_1b_unrope32":
         model_config = LLaMAConfig(
@@ -334,7 +334,7 @@ def get_model_config(model_variant):
             max_expected_seq_len=4096,
             rope_theta=32,
             rope_scaling={"rope_type":"unrope"},
-            rope_partial=.25,
+            rope_partial=.5,
         )
     elif model_variant == "llama_1b_triton":
         model_config = LLaMAConfig(
