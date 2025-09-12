@@ -348,18 +348,52 @@ def get_model_config(model_variant):
             rope_scaling={"rope_type":"unrope"},
             rope_partial=.5,
         )
-    elif model_variant == "llama_1b_triton":
+    elif model_variant == "llama_3b":
         model_config = LLaMAConfig(
             src_vocab_size=128256,
-            emb_dim=1280,
-            nheads=20,
-            kvheads=5,
-            nlayers=32,
-            hidden_grow_factor=3.2,
+            emb_dim=2048,
+            nheads=16,
+            kvheads=4,
+            nlayers=48,
+            hidden_grow_factor=3.5,
+            max_expected_seq_len=4096,
+            rope_theta=500000.0,
+        )
+    elif model_variant == "llama_3b_halfrope":
+        model_config = LLaMAConfig(
+            src_vocab_size=128256,
+            emb_dim=2048,
+            nheads=16,
+            kvheads=4,
+            nlayers=48,
+            hidden_grow_factor=3.5,
+            max_expected_seq_len=4096,
+            rope_theta=500000.0,
+            rope_partial=.5,
+        )
+    elif model_variant == "llama_3b_rope652":
+        model_config = LLaMAConfig(
+            src_vocab_size=128256,
+            emb_dim=2048,
+            nheads=16,
+            kvheads=4,
+            nlayers=48,
+            hidden_grow_factor=3.5,
+            max_expected_seq_len=4096,
+            rope_theta=652.0,
+        )
+    elif model_variant == "llama_3b_unrope32":
+        model_config = LLaMAConfig(
+            src_vocab_size=128256,
+            emb_dim=2048,
+            nheads=16,
+            kvheads=4,
+            nlayers=48,
+            hidden_grow_factor=3.5,
             max_expected_seq_len=4096,
             rope_theta=32,
             rope_scaling={"rope_type":"unrope"},
-            rope_partial=.25,
+            rope_partial=.5,
         )
     elif model_variant == "mamba_9.8b_32k":
         model_config = {
