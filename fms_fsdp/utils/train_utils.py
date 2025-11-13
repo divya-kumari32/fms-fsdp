@@ -74,6 +74,12 @@ def train(
 
     model.train()
     ddp_stats = torch.zeros(3).to(local_rank)
+    if cp_degree > 1:
+        cp_rank = rank % cp_degree
+        local_len = cfg.seq_length // cp_degree
+        posids = torch.arange(local_len, dtype=torch.long, device=local_rank) + cp_rank*local_len
+    else:
+        posids = None
 
     start = time.time()
     loop_start = time.time()
@@ -85,7 +91,7 @@ def train(
         label = label.to(local_rank)
 
         optimizer.zero_grad()
-        output = model(input)
+        output = model(input, position_ids=posids)
         output = output.logits if hasattr(output, "logits") else output
         ce_loss = torch.nn.CrossEntropyLoss()
         loss = ce_loss(output.view(-1, output.size(-1)), label.view(-1).long())
