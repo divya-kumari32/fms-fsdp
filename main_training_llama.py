@@ -82,6 +82,7 @@ def main(**kwargs):
         mesh = get_2D_world_mesh(world_size)
         fsdp_mesh = mesh
         cp_mesh = mesh["intra_node"] if cfg.cp else None
+        print("CPMESH", cp_mesh)
     else:
         mesh = get_1D_world_mesh(world_size)
         fsdp_mesh = mesh
