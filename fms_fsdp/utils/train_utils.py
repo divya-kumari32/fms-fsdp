@@ -77,7 +77,7 @@ def train(
     if cp_degree > 1:
         cp_rank = rank % cp_degree
         local_len = cfg.seq_length // cp_degree
-        posids = torch.arange(local_len, dtype=torch.long, device=local_rank) + cp_rank*local_len
+        posids = torch.arange(local_len, dtype=torch.long, device=local_rank)[None] + cp_rank*local_len
     else:
         posids = None
 
