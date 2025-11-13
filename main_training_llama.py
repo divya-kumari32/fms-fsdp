@@ -98,9 +98,9 @@ def main(**kwargs):
     llama_config = get_model_config(cfg.model_variant)
     if cfg.low_cpu_fsdp:
         with torch.device("meta"):
-            model = LLaMA(llama_config)
+            model = LLaMA(llama_config, cp_mesh=cp_mesh)
     else:
-        model = LLaMA(llama_config)
+        model = LLaMA(llama_config, cp_mesh=cp_mesh)
         model.reset_parameters()
 
     if rank == 0:
