@@ -58,6 +58,41 @@ def main(**kwargs):
         param_init_fn,
     ) = get_policies(cfg, rank, block)
 
+    # Meshes for FSDP and CP. NOTE: @goon - Getting hangs and/or OOMs if I don't explicitly specify
+    # the FSDP mesh when using 4+ nodes with HSDP + in-node-CP.
+    def get_1D_world_mesh(world_size: int) -> DeviceMesh:
+        mesh = dist.device_mesh.init_device_mesh("cuda", (world_size,))
+        return mesh
+
+    def get_2D_world_mesh(world_size: int) -> DeviceMesh:
+        num_gpu_per_node = torch.cuda.device_count()
+        assert world_size % num_gpu_per_node == 0
+        mesh = dist.device_mesh.init_device_mesh(
+            "cuda",
+            (world_size // num_gpu_per_node, num_gpu_per_node),
+            mesh_dim_names=("inter_node", "intra_node"),
+        )
+        return mesh
+
+    requires_2d_mesh = (cfg.sharding_strategy == "hsdp") or (
+        cfg.cp and not cfg.cp_over_world
+    )
+    if requires_2d_mesh:
+        mesh = get_2D_world_mesh(world_size)
+        fsdp_mesh = mesh
+        cp_mesh = mesh["intra_node"] if cfg.cp else None
+    else:
+        mesh = get_1D_world_mesh(world_size)
+        fsdp_mesh = mesh
+        cp_mesh = mesh if cfg.cp else None
+
+    if cfg.cp:
+        cp_degree = world_size if cfg.cp_over_world else torch.cuda.device_count()
+    else:
+        cp_degree = 1
+
+    dp_degree = world_size // cp_degree
+
     # get fms model
     llama_config = get_model_config(cfg.model_variant)
     if cfg.low_cpu_fsdp:
@@ -75,7 +110,7 @@ def main(**kwargs):
     if rank == 0:
         print("Constructing datasets...")
     if not cfg.use_dummy_dataset:
-        train_loader = get_data_loader(cfg, rank, world_size, world_size)
+        train_loader = get_data_loader(cfg, rank, world_size, dp_degree)
     else:
         train_loader = get_dummy_loader(cfg, rank, world_size)
     if rank == 0:
@@ -84,10 +119,11 @@ def main(**kwargs):
     # FSDP
     model = FSDP(
         model,
+        device_mesh=fsdp_mesh,
         auto_wrap_policy=wrapping_policy,
         mixed_precision=mixed_precision_policy,
         sharding_strategy=sharding_strategy_policy,
-        use_orig_params=cfg.use_torch_compile,
+        use_orig_params=True,
         device_id=torch.cuda.current_device(),
         limit_all_gathers=True,
         param_init_fn=param_init_fn,
@@ -138,11 +174,17 @@ def main(**kwargs):
 
     # LR schedule
     if cfg.training_stage == "annealing":
-        schedule = lambda x: 1 - x / cfg.num_steps
-    else:
-        warmup_interval = min(2000, cfg.num_steps // 20)
         schedule = lambda x: min(
-            1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2,
+            warmup(x),
+            1 - x / cfg.num_steps,
+        )
+    elif cfg.training_stage == "constant":
+        # no decay for intermediate jobs
+        schedule = warmup
+    else:
+        # cosine decay
+        schedule = lambda x: min(
+            warmup(x),
             0.1
             + 0.5
             * (1 - 0.1)
@@ -168,6 +210,7 @@ def main(**kwargs):
         checkpointer,
         start_step,
         tokens_seen,
+        cp_degree,
     )
 
     checkpointer.save_single_file(cfg.num_steps, model)
