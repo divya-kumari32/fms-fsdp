@@ -218,9 +218,9 @@ def get_model_config(model_variant):
             "attn_cfg": {
                 "causal": True,
                 "d_conv": 0,
-                "head_dim": 128,
-                "num_heads": 10,
-                "num_heads_kv": 5,
+                "head_dim": 80,
+                "num_heads": 16,
+                "num_heads_kv": 4,
                 "out_proj_bias": False,
                 "qkv_proj_bias": False,
                 "rotary_emb_dim": 0,
