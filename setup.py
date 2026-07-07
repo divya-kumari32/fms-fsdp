@@ -9,7 +9,7 @@ setup(
     description="Pretraining scripts using FSDP and IBM Foundation Model Stack",
     url="https://github.com/foundation-model-stack/fms-fsdp",
     packages=find_packages(),
-    install_requires=["ibm-fms >= 0.0.3", "torch >= 2.1"],
+    install_requires=["ibm-fms >= 0.0.3", "torch >= 2.1", "hyper-connections >= 0.4.11"],
     license="Apache License 2.0",
     classifiers=[
         "Programming Language :: Python :: 3",
