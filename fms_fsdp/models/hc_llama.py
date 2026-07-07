@@ -9,6 +9,17 @@ from fms.utils.activation import str_to_activation
 from hyper_connections import mc_get_init_and_expand_reduce_stream_functions
 
 
+def _fix_scalar_params(module):
+    """Replace scalar (0-d) parameters with 1D tensors for FSDP compatibility."""
+    for name, param in list(module._parameters.items()):
+        if param is not None and param.dim() == 0:
+            module._parameters[name] = nn.Parameter(
+                param.data.unsqueeze(0), requires_grad=param.requires_grad
+            )
+    for child in module.children():
+        _fix_scalar_params(child)
+
+
 class AttnBranch(nn.Module):
     def __init__(self, ln, attn):
         super().__init__()
@@ -135,6 +146,8 @@ class HCLLaMA(nn.Module):
         self.head = nn.Linear(config.emb_dim, config.src_vocab_size, bias=False)
         # Weight tying
         self.embedding.weight = self.head.weight
+
+        _fix_scalar_params(self)
 
     def forward(self, x, position_ids=None, **kwargs):
         x = self.embedding(x)
