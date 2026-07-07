@@ -89,6 +89,10 @@ class train_config:
     fim_mid: int = 2
     fim_suf: int = 3
 
+    # HyperConnections
+    hc_num_streams: int = 4
+    hc_sinkhorn_iters: int = 20
+
     # context parallel
     cp: bool = False
     cp_mamba_impl: str = "allgather"  # "allgather" or "serial"
