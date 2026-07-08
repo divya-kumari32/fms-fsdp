@@ -161,4 +161,5 @@ class HCLLaMA(nn.Module):
 
         x = self.dec_norm(x)
         x = self.reduce_stream(x)
+        x = x / self.num_streams
         return self.head(x)
