@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from fms.models.llama import LLaMAConfig
 from fms.modules.attention import MultiHeadAttention
 from fms.modules.feedforward import GatedLinearUnit
@@ -7,6 +8,17 @@ from fms.modules.layernorm import LayerNormParameterized
 from fms.modules.positions import RotaryEmbedding
 from fms.utils.activation import str_to_activation
 from hyper_connections import mc_get_init_and_expand_reduce_stream_functions
+
+
+def _patch_hc_norm_fp32(hc_module):
+    """Monkey-patch HC module's RMSNorm to compute F.normalize in fp32."""
+    norm = hc_module.norm
+    orig_forward = norm.forward
+
+    def fp32_forward(x):
+        return F.normalize(x.float(), dim=-1).to(x.dtype) * norm.scale * (norm.gamma + 1)
+
+    norm.forward = fp32_forward
 
 
 def _fix_scalar_params(module):
@@ -101,15 +113,12 @@ class HCLLaMABlock(nn.Module):
             branch=FFNBranch(self.ff_ln, self.ff_sub_layer),
             layer_index=layer_idx * 2 + 1,
         )
+        _patch_hc_norm_fp32(self.hc_attn)
+        _patch_hc_norm_fp32(self.hc_ffn)
 
     def forward(self, x, *, position_ids=None, **kwargs):
         x = self.hc_attn(x, position_ids=position_ids)
-        if torch.isnan(x).any():
-            print(f"[NaN] in block after hc_attn", flush=True)
-            return x
         x = self.hc_ffn(x)
-        if torch.isnan(x).any():
-            print(f"[NaN] in block after hc_ffn", flush=True)
         return x
 
 
@@ -161,11 +170,8 @@ class HCLLaMA(nn.Module):
         if position_ids is not None:
             position_ids = position_ids.repeat(self.num_streams, 1)
 
-        for i, layer in enumerate(self.layers):
+        for layer in self.layers:
             x = layer(x, position_ids=position_ids)
-            if torch.isnan(x).any():
-                print(f"[NaN] detected after layer {i}", flush=True)
-                break
 
         x = self.reduce_stream(x)
         x = self.dec_norm(x)
