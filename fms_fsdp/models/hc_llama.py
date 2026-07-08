@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from fms.models.llama import LLaMAConfig
 from fms.modules.attention import MultiHeadAttention
 from fms.modules.feedforward import GatedLinearUnit
@@ -8,17 +7,6 @@ from fms.modules.layernorm import LayerNormParameterized
 from fms.modules.positions import RotaryEmbedding
 from fms.utils.activation import str_to_activation
 from hyper_connections import mc_get_init_and_expand_reduce_stream_functions
-
-
-def _patch_hc_norm_fp32(hc_module):
-    """Monkey-patch HC module's RMSNorm to compute F.normalize in fp32."""
-    norm = hc_module.norm
-    orig_forward = norm.forward
-
-    def fp32_forward(x):
-        return F.normalize(x.float(), dim=-1).to(x.dtype) * norm.scale * (norm.gamma + 1)
-
-    norm.forward = fp32_forward
 
 
 def _fix_scalar_params(module):
@@ -113,8 +101,6 @@ class HCLLaMABlock(nn.Module):
             branch=FFNBranch(self.ff_ln, self.ff_sub_layer),
             layer_index=layer_idx * 2 + 1,
         )
-        _patch_hc_norm_fp32(self.hc_attn)
-        _patch_hc_norm_fp32(self.hc_ffn)
 
     def forward(self, x, *, position_ids=None, **kwargs):
         x = self.hc_attn(x, position_ids=position_ids)
@@ -162,6 +148,23 @@ class HCLLaMA(nn.Module):
         self.embedding.weight = self.head.weight
 
         _fix_scalar_params(self)
+
+    def reset_parameters(self):
+        nn.init.trunc_normal_(
+            self.embedding.weight, mean=0.0, std=self.config.emb_dim**-0.5
+        )
+        for device in set(
+            [param.device for param in self.parameters()]
+            + [buffer.device for buffer in self.buffers()]
+        ):
+            self.rot_emb.compute_freqs_cis(device, self.config.max_expected_seq_len)
+        for m in self.modules():
+            if (
+                isinstance(m, MultiHeadAttention)
+                or isinstance(m, GatedLinearUnit)
+                or isinstance(m, LayerNormParameterized)
+            ):
+                m.reset_parameters()
 
     def forward(self, x, position_ids=None, **kwargs):
         x = self.embedding(x)

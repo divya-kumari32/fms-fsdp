@@ -88,12 +88,22 @@ def main(**kwargs):
     dp_degree = world_size // cp_degree
 
     llama_config = get_model_config(cfg.model_variant)
-    model = HCLLaMA(
-        llama_config,
-        num_streams=cfg.hc_num_streams,
-        sinkhorn_iters=cfg.hc_sinkhorn_iters,
-        cp_mesh=cp_mesh,
-    )
+    if cfg.low_cpu_fsdp:
+        with torch.device("meta"):
+            model = HCLLaMA(
+                llama_config,
+                num_streams=cfg.hc_num_streams,
+                sinkhorn_iters=cfg.hc_sinkhorn_iters,
+                cp_mesh=cp_mesh,
+            )
+    else:
+        model = HCLLaMA(
+            llama_config,
+            num_streams=cfg.hc_num_streams,
+            sinkhorn_iters=cfg.hc_sinkhorn_iters,
+            cp_mesh=cp_mesh,
+        )
+        model.reset_parameters()
 
     if rank == 0:
         total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
