@@ -159,7 +159,6 @@ class HCLLaMA(nn.Module):
         for layer in self.layers:
             x = layer(x, position_ids=position_ids)
 
-        x = self.dec_norm(x)
         x = self.reduce_stream(x)
-        x = x / self.num_streams
+        x = self.dec_norm(x)
         return self.head(x)
