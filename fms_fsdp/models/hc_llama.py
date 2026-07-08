@@ -104,7 +104,12 @@ class HCLLaMABlock(nn.Module):
 
     def forward(self, x, *, position_ids=None, **kwargs):
         x = self.hc_attn(x, position_ids=position_ids)
+        if torch.isnan(x).any():
+            print(f"[NaN] in block after hc_attn", flush=True)
+            return x
         x = self.hc_ffn(x)
+        if torch.isnan(x).any():
+            print(f"[NaN] in block after hc_ffn", flush=True)
         return x
 
 
@@ -156,8 +161,11 @@ class HCLLaMA(nn.Module):
         if position_ids is not None:
             position_ids = position_ids.repeat(self.num_streams, 1)
 
-        for layer in self.layers:
+        for i, layer in enumerate(self.layers):
             x = layer(x, position_ids=position_ids)
+            if torch.isnan(x).any():
+                print(f"[NaN] detected after layer {i}", flush=True)
+                break
 
         x = self.reduce_stream(x)
         x = self.dec_norm(x)
