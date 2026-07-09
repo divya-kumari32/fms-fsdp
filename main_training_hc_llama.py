@@ -167,7 +167,7 @@ def main(**kwargs):
         for g in optimizer.param_groups:
             g["initial_lr"] = cfg.learning_rate
 
-    warmup_interval = min(2000, cfg.num_steps // 20)
+    warmup_interval = max(1, min(2000, cfg.num_steps // 20))
     warmup = lambda x: 1 - (1 - min(x, warmup_interval) / warmup_interval) ** 2
     if cfg.training_stage == "annealing":
         schedule = lambda x: min(
