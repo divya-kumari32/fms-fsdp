@@ -268,13 +268,15 @@ def get_profiler(cfg, rank):
         return
     if cfg.profiler_rank0_only and rank != 0:
         return
+    trace_dir = os.path.join(cfg.ckpt_save_path, "profile_traces")
+    os.makedirs(trace_dir, exist_ok=True)
     return torch.profiler.profile(
         activities=[
             torch.profiler.ProfilerActivity.CPU,
             torch.profiler.ProfilerActivity.CUDA,
         ],
         schedule=torch.profiler.schedule(wait=1, warmup=2, active=3, repeat=1),
-        on_trace_ready=torch.profiler.tensorboard_trace_handler("profile_traces"),
+        on_trace_ready=torch.profiler.tensorboard_trace_handler(trace_dir),
         profile_memory=True,
         with_stack=False,
         record_shapes=True,
