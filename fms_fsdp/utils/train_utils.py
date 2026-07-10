@@ -31,7 +31,7 @@ def train(
     tokens_seen,
     cp_degree: int = 1,
 ):
-    if cfg.tracker and cfg.tracker.lower() not in ["none", ""]:
+    if cfg.tracker:
         if cfg.tracker not in ["wandb", "aim"]:
             raise ValueError(f"tracker {cfg.tracker} not supported.")
         tracker_dir = cfg.tracker_dir
