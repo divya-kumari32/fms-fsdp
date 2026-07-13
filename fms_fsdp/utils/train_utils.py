@@ -268,8 +268,10 @@ def get_profiler(cfg, rank):
         return
     if cfg.profiler_rank0_only and rank != 0:
         return
-    trace_dir = os.path.join(cfg.ckpt_save_path, "profile_traces")
-    os.makedirs(trace_dir, exist_ok=True)
+    # To persist traces on gpfs, uncomment the next two lines:
+    # trace_dir = os.path.join(cfg.ckpt_save_path, "profile_traces")
+    # os.makedirs(trace_dir, exist_ok=True)
+    trace_dir = "profile_traces"
     return torch.profiler.profile(
         activities=[
             torch.profiler.ProfilerActivity.CPU,
