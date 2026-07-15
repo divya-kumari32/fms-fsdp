@@ -90,22 +90,21 @@ class RATransformerBlock(nn.Module):
 
 
 class RALLaMA(nn.Module):
-    """LLaMA with Full Attention Residuals (arXiv 2603.15031).
+    """LLaMA with Bounded Attention Residuals (arXiv 2603.15031, i%n variant).
 
     Replaces fixed unit-weight residual accumulation with softmax attention
-    over preceding layer outputs. Each layer l computes:
+    over a fixed-size cache of N slots. Each layer l computes:
 
-        h_l = Σ_{i=0}^{l-1} α_{i→l} · v_i
+        h_l = Σ_{i=0}^{N-1} α_{i→l} · cache[i]
 
-    where v_0 = embedding, v_i = f_i(h_i) (layer i's contribution),
-    α_{i→l} = softmax(q_l^T · RMSNorm(v_i)) with learned pseudo-query q_l.
-
-    This is the full version (no compression): cache grows linearly per layer.
+    Layer contributions are written to slot (layer_idx % N), keeping memory
+    constant regardless of depth.
     """
 
-    def __init__(self, config: LLaMAConfig, *, cp_mesh=None):
+    def __init__(self, config: LLaMAConfig, *, cp_mesh=None, num_slots=4):
         super().__init__()
         self.config = config
+        self.num_slots = num_slots
 
         self.embedding = nn.Embedding(config.src_vocab_size, config.emb_dim)
 
@@ -124,7 +123,6 @@ class RALLaMA(nn.Module):
         ])
 
         # Learned pseudo-query per layer (zero-init → uniform weights at start)
-        # Shape: [nlayers, emb_dim]
         self.depth_queries = nn.Parameter(torch.zeros(config.nlayers, config.emb_dim))
 
         # RMSNorm for keys (applied to cached values before scoring)
@@ -163,48 +161,42 @@ class RALLaMA(nn.Module):
         for m in self.modules():
             if isinstance(m, (MultiHeadAttention, GatedLinearUnit, LayerNormParameterized)):
                 m.reset_parameters()
-        # depth_queries already zero-initialized (uniform attention at start)
 
-    def _depth_attend(self, query, values):
+    def _depth_attend(self, query, cache):
         """Compute attention residual: weighted sum of cached values.
 
         Args:
             query: [D] — learned pseudo-query for this layer
-            values: [B, S, N, D] — stacked cache entries (N = num entries so far)
+            cache: [B, S, N, D] — fixed-size cache (N = num_slots)
 
         Returns:
-            [B, S, D] — weighted combination of cached values
+            [B, S, D] — weighted combination of cache slots
         """
-        # Apply RMSNorm to keys (= values, tied)
-        keys = self.key_norm(values)  # [B, S, N, D]
-
-        # Score: dot product between query and each normalized key
-        # query [D] broadcast against keys [B, S, N, D] → scores [B, S, N]
+        keys = self.key_norm(cache)
         scores = torch.einsum("d,bsnd->bsn", query, keys)
-
-        # Softmax over cache entries (depth-wise attention)
-        attn_weights = F.softmax(scores, dim=-1)  # [B, S, N]
-
-        # Weighted sum of raw values (not normalized)
-        h = torch.einsum("bsn,bsnd->bsd", attn_weights, values)  # [B, S, D]
+        attn_weights = F.softmax(scores, dim=-1)
+        h = torch.einsum("bsn,bsnd->bsd", attn_weights, cache)
         return h
 
     def forward(self, x, position_ids=None, **kwargs):
         x = self.embedding(x)
 
-        # v_0 = token embedding (first cache entry)
-        cache_entries = [x]
+        # Initialize all N cache slots from embedding
+        cache = x.unsqueeze(2).expand(-1, -1, self.num_slots, -1).clone()
 
         for i, layer in enumerate(self.layers):
-            # h_l = Σ α_{i→l} · v_i  (attention over all cached entries)
-            cache_tensor = torch.stack(cache_entries, dim=2)  # [B, S, i+1, D]
-            x = self._depth_attend(self.depth_queries[i], cache_tensor)
+            # Read: attend over fixed-size cache
+            x = self._depth_attend(self.depth_queries[i], cache)
 
-            # Run transformer block, get both output and raw contribution
+            # Transform: run through transformer block
             x, contribution = layer(x, position_ids=position_ids)
 
-            # Cache the layer's contribution: v_i = f_i(h_i)
-            cache_entries.append(contribution)
+            # Write: place contribution in slot i % N (circular buffer)
+            # Use unbind/stack for compile-safe functional write
+            slot = i % self.num_slots
+            slots = list(cache.unbind(dim=2))
+            slots[slot] = contribution
+            cache = torch.stack(slots, dim=2)
 
         x = self.dec_norm(x)
         return self.head(x)
