@@ -90,14 +90,14 @@ def main(**kwargs):
     llama_config = get_model_config(cfg.model_variant)
     if cfg.low_cpu_fsdp:
         with torch.device("meta"):
-            model = RALLaMA(llama_config, cp_mesh=cp_mesh)
+            model = RALLaMA(llama_config, cp_mesh=cp_mesh, num_slots=cfg.ra_num_slots)
     else:
-        model = RALLaMA(llama_config, cp_mesh=cp_mesh)
+        model = RALLaMA(llama_config, cp_mesh=cp_mesh, num_slots=cfg.ra_num_slots)
         model.reset_parameters()
 
     if rank == 0:
         total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        print(f"\n--> RALLaMA (Attention Residuals) has {total_params / 1e6} Million params, full cache ({llama_config.nlayers}+1 entries)\n")
+        print(f"\n--> RALLaMA (Attention Residuals) has {total_params / 1e6} Million params, bounded cache (N={cfg.ra_num_slots} slots)\n")
 
     if rank == 0:
         print("Constructing datasets...")

@@ -93,6 +93,9 @@ class train_config:
     hc_num_streams: int = 4
     hc_sinkhorn_iters: int = 20
 
+    # Attention Residuals (bounded i%n cache)
+    ra_num_slots: int = 4
+
 
     # context parallel
     cp: bool = False
