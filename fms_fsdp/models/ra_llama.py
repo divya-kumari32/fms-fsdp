@@ -97,8 +97,10 @@ class RALLaMA(nn.Module):
 
         h_l = Σ_{i=0}^{N-1} α_{i→l} · cache[i]
 
-    Layer contributions are written to slot (layer_idx % N), keeping memory
-    constant regardless of depth.
+    Layer contributions are ACCUMULATED into slot (layer_idx % N) via residual
+    add (slot += contribution), so each slot is a persistent residual stream
+    (embedding + the deltas routed to it) rather than a bare overwritten delta.
+    Keeps memory constant regardless of depth.
     """
 
     def __init__(self, config: LLaMAConfig, *, cp_mesh=None, num_slots=4):
@@ -191,11 +193,15 @@ class RALLaMA(nn.Module):
             # Transform: run through transformer block
             x, contribution = layer(x, position_ids=position_ids)
 
-            # Write: place contribution in slot i % N (circular buffer)
-            # Use unbind/stack for compile-safe functional write
+            # Write: ACCUMULATE contribution into slot i % N (residual add, not
+            # overwrite). Adding preserves the identity/residual path through the
+            # slot — overwriting with the bare delta destroys it and makes the
+            # gradient devolve into noise. Each slot is a residual accumulator
+            # (embedding + the deltas routed to it), matching attention-residuals'
+            # compressed variant. Use unbind/stack for compile-safe functional write.
             slot = i % self.num_slots
             slots = list(cache.unbind(dim=2))
-            slots[slot] = contribution
+            slots[slot] = slots[slot] + contribution
             cache = torch.stack(slots, dim=2)
 
         x = self.dec_norm(x)
