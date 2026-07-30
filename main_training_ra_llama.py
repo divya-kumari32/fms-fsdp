@@ -90,9 +90,9 @@ def main(**kwargs):
     llama_config = get_model_config(cfg.model_variant)
     if cfg.low_cpu_fsdp:
         with torch.device("meta"):
-            model = RALLaMA(llama_config, cp_mesh=cp_mesh, num_slots=cfg.ra_num_slots)
+            model = RALLaMA(llama_config, cp_mesh=cp_mesh, num_slots=cfg.ra_num_slots, ac_group_size=cfg.ra_ac_group_size)
     else:
-        model = RALLaMA(llama_config, cp_mesh=cp_mesh, num_slots=cfg.ra_num_slots)
+        model = RALLaMA(llama_config, cp_mesh=cp_mesh, num_slots=cfg.ra_num_slots, ac_group_size=cfg.ra_ac_group_size)
         model.reset_parameters()
 
     if rank == 0:
@@ -125,9 +125,15 @@ def main(**kwargs):
     )
 
     if cfg.fsdp_activation_checkpointing:
-        if rank == 0:
-            print(f"--> applying FSDP activation checkpointing...")
-        apply_selective_ac(model, p=cfg.selective_checkpointing)
+        if cfg.ra_ac_group_size > 0:
+            # The model self-checkpoints in layer groups inside RALLaMA.forward
+            # (see ac_group_size). Skip per-block AC to avoid double-checkpointing.
+            if rank == 0:
+                print(f"--> RA grouped activation checkpointing active (group_size={cfg.ra_ac_group_size}); skipping per-block AC handler")
+        else:
+            if rank == 0:
+                print(f"--> applying FSDP activation checkpointing...")
+            apply_selective_ac(model, p=cfg.selective_checkpointing)
 
     if cfg.use_torch_compile:
         if rank == 0:

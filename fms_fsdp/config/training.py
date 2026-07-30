@@ -95,6 +95,9 @@ class train_config:
 
     # Attention Residuals (bounded i%n cache)
     ra_num_slots: int = 4
+    # Activation-checkpoint grouping for RA: number of transformer layers per
+    # checkpoint region. 0 = disabled (use the standard per-block AC handler).
+    ra_ac_group_size: int = 0
 
 
     # context parallel

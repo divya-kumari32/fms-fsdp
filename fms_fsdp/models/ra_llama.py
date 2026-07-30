@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint
 from fms.models.llama import LLaMAConfig
 from fms.modules.attention import MultiHeadAttention
 from fms.modules.feedforward import GatedLinearUnit
@@ -103,10 +104,14 @@ class RALLaMA(nn.Module):
     Keeps memory constant regardless of depth.
     """
 
-    def __init__(self, config: LLaMAConfig, *, cp_mesh=None, num_slots=4):
+    def __init__(self, config: LLaMAConfig, *, cp_mesh=None, num_slots=4, ac_group_size=0):
         super().__init__()
         self.config = config
         self.num_slots = num_slots
+        # Number of transformer layers per activation-checkpoint region.
+        # 0 = disabled: forward runs a plain layer loop (the per-block AC
+        # handler in main_training applies checkpointing instead).
+        self.ac_group_size = ac_group_size
 
         self.embedding = nn.Embedding(config.src_vocab_size, config.emb_dim)
 
@@ -180,18 +185,21 @@ class RALLaMA(nn.Module):
         h = torch.einsum("bsn,bsnd->bsd", attn_weights, cache)
         return h
 
-    def forward(self, x, position_ids=None, **kwargs):
-        x = self.embedding(x)
+    def _run_layers(self, cache, position_ids, start, end):
+        """Run layers [start, end) as one region: read → block → write per layer.
 
-        # Initialize all N cache slots from embedding
-        cache = x.unsqueeze(2).expand(-1, -1, self.num_slots, -1).clone()
-
-        for i, layer in enumerate(self.layers):
+        Carries only `cache` ([B,S,N,D]) as state between layers — the read
+        output `x` is fully re-derived from `cache` at the top of each layer,
+        so `cache` is the single true carried tensor. Returns (x, cache) where
+        x is the last layer's block output (needed for the final dec_norm/head).
+        """
+        x = None
+        for i in range(start, end):
             # Read: attend over fixed-size cache
             x = self._depth_attend(self.depth_queries[i], cache)
 
             # Transform: run through transformer block
-            x, contribution = layer(x, position_ids=position_ids)
+            x, contribution = self.layers[i](x, position_ids=position_ids)
 
             # Write: ACCUMULATE contribution into slot i % N (residual add, not
             # overwrite). Adding preserves the identity/residual path through the
@@ -203,6 +211,32 @@ class RALLaMA(nn.Module):
             slots = list(cache.unbind(dim=2))
             slots[slot] = slots[slot] + contribution
             cache = torch.stack(slots, dim=2)
+
+        return x, cache
+
+    def forward(self, x, position_ids=None, **kwargs):
+        x = self.embedding(x)
+
+        # Initialize all N cache slots from embedding
+        cache = x.unsqueeze(2).expand(-1, -1, self.num_slots, -1).clone()
+
+        if self.ac_group_size > 0 and self.training:
+            # Grouped activation checkpointing: checkpoint each region of
+            # `ac_group_size` layers. Fewer stored boundary snapshots than
+            # per-block AC (one per group instead of one per layer), at the
+            # cost of recomputing the group's read→block→write in backward.
+            nlayers = len(self.layers)
+            for start in range(0, nlayers, self.ac_group_size):
+                end = min(start + self.ac_group_size, nlayers)
+                x, cache = checkpoint(
+                    self._run_layers, cache, position_ids, start, end,
+                    use_reentrant=False,
+                )
+        else:
+            # Disabled (group_size=0) or eval: plain loop, byte-equivalent to
+            # the original per-layer forward. Per-block AC (if enabled) is
+            # applied externally by the training script's AC handler.
+            x, cache = self._run_layers(cache, position_ids, 0, len(self.layers))
 
         x = self.dec_norm(x)
         return self.head(x)
