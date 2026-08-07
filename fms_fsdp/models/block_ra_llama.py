@@ -222,16 +222,12 @@ class BlockRALLaMA(nn.Module):
             for _ in range(config.nlayers)
         ])
 
-        # Precomputed visibility mask, indexed by block b = i // S.
-        # Read set order: [frozen_0 .. frozen_{N-1}, partial]  (length N+1).
-        # Block b sees frozen blocks 0..b-1 (already frozen) and the partial
-        # (position N, always visible); blocks b..N-1 are future/empty (-inf).
-        N = num_slots
-        mask = torch.full((N, N + 1), float("-inf"))
-        mask[:, N] = 0.0  # partial always visible
-        for b in range(N):
-            mask[b, :b] = 0.0  # completed frozen blocks
-        self.register_buffer("depth_mask", mask, persistent=False)
+        # NOTE: the [N, N+1] visibility mask is built per-forward in
+        # `_visibility_mask` (a fresh activation tensor), NOT a registered
+        # buffer. FSDP mixed precision casts registered buffers to the low
+        # dtype via Tensor.set_(fp32_storage <- bf16), which torch.compile's
+        # Dynamo cannot trace ("Could not set tensor of type BFloat16 to a
+        # tensor of type float"). Building it in-graph sidesteps that entirely.
 
         self.dec_norm = LayerNormParameterized(
             config.emb_dim,
@@ -264,7 +260,25 @@ class BlockRALLaMA(nn.Module):
             nn.init.zeros_(layer.attn_depth_query)
             nn.init.zeros_(layer.mlp_depth_query)
 
-    def _run_layers(self, frozen_buf, partial, position_ids, start, end):
+    def _visibility_mask(self, device):
+        """Additive read mask [N, N+1]; row b is the mask for block b.
+
+        Built fresh each forward on the activation device (not a registered
+        buffer) so FSDP mixed precision never casts it — casting the fp32 mask
+        storage to bf16 via Tensor.set_ breaks torch.compile Dynamo tracing.
+
+        Read-set order is [frozen_0 .. frozen_{N-1}, partial] (length N+1).
+        Block b sees frozen blocks 0..b-1 (already frozen) and the partial
+        (column N, always visible); columns b..N-1 are future/empty (-inf).
+        """
+        N = self.num_slots
+        cols = torch.arange(N + 1, device=device)
+        rows = torch.arange(N, device=device).unsqueeze(1)
+        visible = (cols.unsqueeze(0) < rows) | (cols.unsqueeze(0) == N)
+        mask = torch.zeros(N, N + 1, device=device)
+        return mask.masked_fill(~visible, float("-inf"))
+
+    def _run_layers(self, frozen_buf, partial, mask_table, position_ids, start, end):
         """Run layers [start, end) as one region.
 
         Carries (frozen_buf, partial) as the state between layers/groups:
@@ -278,7 +292,7 @@ class BlockRALLaMA(nn.Module):
         """
         for i in range(start, end):
             b = i // self.block_size
-            mask = self.depth_mask[b]
+            mask = mask_table[b]
 
             partial = self.layers[i](
                 frozen_buf, partial, mask, position_ids=position_ids
@@ -307,6 +321,10 @@ class BlockRALLaMA(nn.Module):
         )
         partial = x
 
+        # Visibility mask built in-graph on the activation device (see
+        # _visibility_mask); passed through so the checkpointed region sees it.
+        mask_table = self._visibility_mask(x.device)
+
         if self.ac_group_size > 0 and self.training:
             # Grouped activation checkpointing: checkpoint each region of
             # `ac_group_size` layers. Fewer stored boundary snapshots than
@@ -316,14 +334,15 @@ class BlockRALLaMA(nn.Module):
             for start in range(0, nlayers, self.ac_group_size):
                 end = min(start + self.ac_group_size, nlayers)
                 frozen_buf, partial = checkpoint(
-                    self._run_layers, frozen_buf, partial, position_ids, start, end,
+                    self._run_layers, frozen_buf, partial, mask_table,
+                    position_ids, start, end,
                     use_reentrant=False,
                 )
         else:
             # Disabled (group_size=0) or eval: plain loop. Per-block AC (if
             # enabled) is applied externally by the training script's AC handler.
             frozen_buf, partial = self._run_layers(
-                frozen_buf, partial, position_ids, 0, len(self.layers)
+                frozen_buf, partial, mask_table, position_ids, 0, len(self.layers)
             )
 
         # Reconstruct the residual stream: Σ(frozen blocks) + active partial
