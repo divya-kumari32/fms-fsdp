@@ -372,6 +372,24 @@ def get_model_config(model_variant):
             rope_theta=500000.0,
         )
 
+    # --- 24-layer / wide-FFN arch variant (nlayers 32->24, grow 3.2->4.5).
+    # Iso-parameter (~805M) reshape: fewer, fatter layers. ONE shared config
+    # for all three connection mechanisms — the entrypoint + flags pick the
+    # mechanism (baseline via main_training_llama, mHC via
+    # main_training_hc_llama, block-RA via main_training_block_ra_llama), not
+    # the variant name (none of them branch on it). Block-RA N=8 -> S=3.
+    elif model_variant == "llama_1b_24L":
+        model_config = LLaMAConfig(
+            src_vocab_size=128256,
+            emb_dim=1280,
+            nheads=16,
+            kvheads=4,
+            nlayers=24,
+            hidden_grow_factor=4.5,
+            max_expected_seq_len=4096,
+            rope_theta=500000.0,
+        )
+
     elif model_variant == "llama_1b_halfrope":
         model_config = LLaMAConfig(
             src_vocab_size=128256,
